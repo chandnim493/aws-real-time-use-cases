@@ -1,0 +1,53 @@
+import re
+import boto3
+import csv
+from botocore.exceptions import ClientError
+ 
+ec2 = boto3.client('ec2')
+s3 = boto3.resource('s3')
+target_bucket='SnapshotReport'
+FILE='snapshot.csv'
+ 
+def get_snapshots():
+    account_ids = list()
+    account_ids.append( boto3.client('sts').get_caller_identity().get('Account'))
+    return ec2.describe_snapshots(OwnerIds=account_ids)
+ 
+def volume_exists(volume_id):
+    if not volume_id: return ''
+    try:
+        ec2.describe_volumes(VolumeIds=[volume_id])
+        return True
+    except ClientError:
+        return False
+ 
+
+ 
+def lambda_handler(event, context):
+
+    with open('/tmp/report.csv', 'w') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow([
+        'snapshot id',
+        'description',
+        'started',
+        'size',
+        'volume',
+        'volume exists'
+        ])
+        snaps = get_snapshots()
+        print(f"{len(snaps)}")
+        print(f"{snaps}")
+        for snap in snaps.get('Snapshots'):
+            writer.writerow([
+            snap['SnapshotId'],
+            snap['Description'],
+            snap['StartTime'],
+            str(snap['VolumeSize']),
+            snap['VolumeId'],
+            str(volume_exists(snap['VolumeId']))
+            ])
+ 
+    # s3.put_object(Body=/tmp/report.csv,Bucket=target_bucket,Key=FILE) 
+    s3.Bucket(target_bucket).upload_file('/tmp/report.csv',FILE)
+    print('success')
